@@ -8,6 +8,7 @@
     use MRO::Compat;
     use mro 'c3';
     use Encode;
+    use Scalar::Util 'blessed';
 
     use constant NS_SOAP_ENV => "http://schemas.xmlsoap.org/soap/envelope/";
     use constant NS_WSDLSOAP => "http://schemas.xmlsoap.org/wsdl/soap/";
@@ -330,11 +331,27 @@
           unless $soap;
 
         if (scalar @{$c->error}) {
-            $c->stash->{soap}->fault
-              ({ code => '{'.NS_SOAP_ENV.'}Client',
-                 reason => 'Unexpected Error', detail =>
-                 'Unexpected error in the application: '.(join "\n", @{$c->error} ).'!'})
-                unless $c->stash->{soap}->fault;
+	    
+	    my @errstack = @{$c->error};
+	    my @messages;
+	    while ( my $err = shift @errstack ){
+		if ( blessed $err ){
+		    $err = $err->stringify if $err->can('stringify');
+		}elsif( ref($err) eq 'SCALAR' ){
+		    $err = $$err;
+		}elsif( ref($err) eq 'ARRAY' ){
+		    push @errstack, @$err;
+		    next;
+		}
+		push @messages, $err;
+	    }
+	    
+            $c->stash->{soap}->fault({
+		code   => '{'.NS_SOAP_ENV.'}Client',
+                reason => 'Unexpected Error',
+		detail => 'Unexpected error in the application: ' . join( "\n", @messages ) 
+	    }) unless $c->stash->{soap}->fault;
+	    
             $c->error(0);
         }
 
